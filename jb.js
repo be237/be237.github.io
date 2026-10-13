@@ -13,17 +13,9 @@ const params = new URLSearchParams(location.search);
 const STOP_BEFORE_DOUBLE = params.get("stop") === "beforedouble";
 
 function post(tag, detail) {
-  try {
-    const x = new XMLHttpRequest();
-    x.open("POST", "/t", true);
-    x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-    x.send(
-      "PS4-JB&tag=" +
-        encodeURIComponent(tag) +
-        "&detail=" +
-        encodeURIComponent(String(detail == null ? "" : detail)),
-    );
-  } catch (e) {}
+  // Telemetry disabled: the original POSTed each step to "/t", an endpoint
+  // that does not exist on this static host. The calls are kept as a no-op
+  // so every mark()/trace() call site stays intact, but nothing is sent.
 }
 
 const VERBOSE = params.get("verbose") === "1";
@@ -61,28 +53,33 @@ function finishUI(ok) {
         : "Refresh the page and run again";
   document.body.className = ok ? "done" : "fail";
 }
+function renderLine(l) {
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  l = esc(l);
+  const c =
+    /FAIL|ERROR|THREW|REBOOT|MISS|LOST|POISON|TIMEOUT|MISMATCH|ABORTED|GIVEUP|NO-STORAGE|UNSEEN/i.test(
+      l,
+    )
+      ? "bad"
+      : /WARN|SKIP|REFUS|COMMITTED|DIRTY/i.test(l)
+        ? "warn"
+        : /\bOK\b|\bPASS\b|PASS=|ACHIEVED|RUNNING|ARMED/i.test(l)
+          ? "ok"
+          : "";
+  return c ? '<span class="' + c + '">' + l + "</span>" : l;
+}
+
 function mark(tag, detail) {
   const raw = detail;
   detail = terse(detail);
-  lines.push(tag + (detail == null || detail === "" ? "" : "  " + detail));
+  const line = tag + (detail == null || detail === "" ? "" : "  " + detail);
+  const first = lines.push(line) === 1;
   if (SHOW_LOG && outEl) {
-    const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    outEl.innerHTML = lines
-      .map(function (l) {
-        l = esc(l);
-        const c =
-          /FAIL|ERROR|THREW|REBOOT|MISS|LOST|POISON|TIMEOUT|MISMATCH|ABORTED|GIVEUP|NO-STORAGE|UNSEEN/i.test(
-            l,
-          )
-            ? "bad"
-            : /WARN|SKIP|REFUS|COMMITTED|DIRTY/i.test(l)
-              ? "warn"
-              : /\bOK\b|\bPASS\b|PASS=|ACHIEVED|RUNNING|ARMED/i.test(l)
-                ? "ok"
-                : "";
-        return c ? '<span class="' + c + '">' + l + "</span>" : l;
-      })
-      .join("\n");
+    // Append only the new line (O(1)) instead of rebuilding the whole log
+    // on every call (O(n^2) + full DOM re-parse). lines is append-only and
+    // outEl is written only here, so the rendered result is identical to
+    // the previous lines.map(renderLine).join("\n").
+    outEl.insertAdjacentHTML("beforeend", (first ? "" : "\n") + renderLine(line));
     outEl.scrollTop = outEl.scrollHeight;
   }
   post(tag, raw);
